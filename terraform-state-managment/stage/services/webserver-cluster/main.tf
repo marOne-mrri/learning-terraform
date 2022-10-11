@@ -28,15 +28,16 @@ resource "aws_security_group" "sg" {
 }
 
 resource "aws_launch_configuration" "launch_configuration_test" {
-  image_id          = "ami-08c40ec9ead489470"
-  instance_type     = "t2.micro"
-  security_groups   = [aws_security_group.sg.id]
-  user_data         = <<-EOF
-                        #!/bin/bash
-                        sudo apt update -y
-                        sudo apt install -y nginx
-                        sudo service start nginx
-                      EOF
+  image_id        = "ami-08c40ec9ead489470"
+  instance_type   = "t2.micro"
+  security_groups = [aws_security_group.sg.id]
+  user_data       = <<-EOF
+                      #!/bin/bash
+                      sudo apt update -y
+                      sudo apt install -y nginx
+                      sudo echo "${data.terraform_remote_state.db.outputs.address}" >> /usr/share/nginx/html/index.html
+                      sudo service restart nginx
+                    EOF
   lifecycle {
     create_before_destroy = true
   }
@@ -121,29 +122,38 @@ resource "aws_lb_target_group" "target_grp" {
 
 resource "aws_lb_listener_rule" "lb_listener_rule_test" {
   listener_arn = aws_lb_listener.http.arn
-  priority = 100
+  priority     = 100
   condition {
     path_pattern {
       values = ["*"]
     }
   }
   action {
-    type = "forward"
+    type             = "forward"
     target_group_arn = aws_lb_target_group.target_grp.arn
   }
 }
 
 output "alb_dns_name" {
-  value = aws_lb.lb_test.dns_name
+  value       = aws_lb.lb_test.dns_name
   description = "lb domain name"
 }
 
 terraform {
   backend "s3" {
     bucket         = "terraform-up-and-running-state-managment-bucket"
-    key            = "stage/terraform.tfstate"
+    key            = "stage/services/webserver-cluster/terraform.tfstate"
     region         = "us-east-1"
     dynamodb_table = "terraform-up-and-running-state-locks"
     encrypt        = true
+  }
+}
+
+data "terraform_remote_state" "db" {
+  backend = "s3"
+  config = {
+    bucket = "terraform-up-and-running-state-managment-bucket",
+    key    = "stage/data-store/mysql/terraform.tfstate"
+    region = "us-east-1"
   }
 }
